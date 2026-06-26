@@ -1,0 +1,161 @@
+{
+        email info@norman.law
+        # Enable debug if needed:
+        # debug
+        #admin 0.0.0.0:2019
+}
+
+(subdomain-log) {
+        # Enable access and error logging for ALL hosts/vhosts
+        # Logs go to /var/log/caddy/access.log (you can change location)
+        log [access-{args[0]}] {
+                hostnames {args[0]}
+                output file /var/log/caddy/{args[0]}.access.log {
+                        roll_size 100mb
+                        roll_keep 10
+                        roll_keep_for 2160h
+                        roll_local_time
+                }
+                format transform `{request>headers>X-Forwarded-For>[0]:request>remote_ip} - {user_id} [{ts}] "{request>method} {request>uri} {request>proto}" {status} {size} "{request>headers>Referer>[0]}" "{request>headers>User-Agent>[0]}"` {
+                        time_format "02/Jan/2006:15:04:05 -0700"
+                }
+                level INFO
+        }
+
+        log [error-{args[0]}] {
+                hostnames {args[0]}
+                output file /var/log/caddy/{args[0]}.error.log {
+                        roll_size 100mb
+                        roll_keep 5
+                        roll_keep_for 2160h
+                        roll_local_time
+                }
+                format transform "{common_log}"
+                level ERROR
+        }
+}
+
+norman.law, www.norman.law {
+        tls {
+                dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+        }
+        import subdomain-log norman.law www.norman.law
+        root * /var/www/norman.law/public_html
+        php_fastcgi unix//run/php/php8.1-fpm.sock
+        file_server
+        encode zstd gzip
+}
+
+# =========================
+# Wildcard certs via Cloudflare
+# =========================
+*.norman.law {
+        tls {
+                dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+        }
+
+        # --- Root WordPress site ---
+        #    @root host norman.law www.norman.law
+        #    handle @root {
+        #        root * /var/www/norman.law/public_html/
+        #        php_fastcgi unix//run/php/php8.2-fpm.sock
+        #        file_server
+        #    }
+
+
+        # --- Dev site ---
+        @dev host dev.norman.law
+        import subdomain-log dev.norman.law
+		 handle @dev {
+                root * /var/www/dev.norman.law/public_html
+                php_fastcgi unix//run/php/php8.1-fpm.sock
+                file_server
+                encode zstd gzip
+        }
+
+        # --- JURIS (frontend + API reverse proxy) ---
+        @juris host juris.norman.law
+        log [juris-log] {
+                output file /var/log/caddy/juris.norman.law.access.log {
+                        roll_size 100mb
+                        roll_keep 10
+                        roll_keep_for 720h
+                }
+                format json
+        }
+        #import subdomain-log juris.norman.law
+        handle @juris {
+                root * /var/www/norman.law/public_html/wp-content/juris
+                php_fastcgi unix:/run/php/php8.1-fpm.sock
+                file_server
+                encode zstd gzip
+
+                # API traffic → Uvicorn backend
+                handle_path /api/* {
+                        uri strip_prefix /api
+                        reverse_proxy 127.0.0.1:8000 {
+                                flush_interval -1
+                                transport http {
+                                        versions 1.1
+                                }
+                        }
+                }
+        }
+
+# --- ChromaDB service ---
+@chroma host chroma.localhost
+import subdomain-log chroma.norman.law
+handle @chroma {
+        reverse_proxy 127.0.0.1:8001
+}
+
+# --- n8n Automation (with Websockets) ---
+@n8n host n8n.localhost
+import subdomain-log n8n.norman.law
+handle @n8n {
+        reverse_proxy 127.0.0.1:5678 {
+            flush_interval -1
+         }
+}
+
+# --- Foundry (example port) ---
+@foundry host foundry.norman.law
+import subdomain-log foundry.norman.law
+handle @foundry {
+        reverse_proxy 127.0.0.1:30000
+}
+
+    # --- Docuseal ---
+@docuseal host docuseal.norman.law
+import subdomain-log docuseal.norman.law
+handle @docuseal {
+        reverse_proxy 127.0.0.1:5001
+}
+
+# --- Ollama API ---
+@ollama host ollama.norman.law
+import subdomain-log ollama.norman.law
+handle @ollama {
+        reverse_proxy 127.0.0.1:11434
+}
+
+# --- NAS UI ---
+@nas host nas.norman.law
+import subdomain-log nas.norman.law
+handle @nas {
+        reverse_proxy 108.235.200.117:5443
+}
+
+# --- Webmin ---
+@webmin host webmin.norman.law
+import subdomain-log webmin.norman.law
+handle @webmin {
+        reverse_proxy 127.0.0.1:10000
+}
+
+# =================
+# Fallback (abort unknown subdomains)
+# =================
+handle {
+        abort
+}
