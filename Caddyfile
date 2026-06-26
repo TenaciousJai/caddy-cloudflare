@@ -110,13 +110,13 @@ handle @chroma {
 }
 
 # --- n8n Automation (with Websockets) ---
-@n8n host n8n.norman.law
+@n8n host n8n.localhost
 import subdomain-log n8n.norman.law
 handle @n8n {
-        reverse_proxy n8n:5678 {
-                flush_interval -1
-                }
-        }
+        reverse_proxy 127.0.0.1:5678 {
+            flush_interval -1
+         }
+}
 
 # --- Foundry (example port) ---
 @foundry host foundry.norman.law
