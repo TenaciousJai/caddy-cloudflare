@@ -30,7 +30,7 @@ services:
     networks:
       - proxy-network
     environment:
-      - CLOUDFLARE_API_TOKEN = $CLOUDFLARE_API_TOKEN
+      - CLOUDFLARE_API_TOKEN
 
 volumes:
   portainer_data:
